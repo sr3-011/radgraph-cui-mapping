@@ -1,11 +1,14 @@
 import pandas as pd
 import json
+import sys
 from rapidfuzz import fuzz
 
 # =========================
-# LOAD DATA
+# LOAD DATA (Flexible input)
 # =========================
-with open("nodes_final_fixed.json") as f:
+file_path = sys.argv[1] if len(sys.argv) > 1 else "nodes_final_fixed.json"
+
+with open(file_path) as f:
     nodes = json.load(f)
 
 df = pd.DataFrame(nodes)
@@ -36,7 +39,7 @@ def map_cui(text):
     best_cui = None
     best_score = 0
 
-    for concept, (cui, keywords) in medical_dict.items():
+    for _, (cui, keywords) in medical_dict.items():
         score = 0
 
         for word in keywords:
@@ -45,8 +48,7 @@ def map_cui(text):
                 score += 2
 
             # Fuzzy match
-            fuzzy_score = fuzz.partial_ratio(word, text)
-            if fuzzy_score > 80:
+            if fuzz.partial_ratio(word, text) > 80:
                 score += 1
 
         if score > best_score:
@@ -57,24 +59,45 @@ def map_cui(text):
 
 
 # =========================
-# PROCESS ALL TEXT
+# PROCESS DATA
 # =========================
-mapped = []
-unmapped = []
+def process_data(df):
+    mapped = []
+    unmapped = []
 
-for text in df["text"]:
-    cui, score = map_cui(text)
+    for i, row in df.iterrows():
+        text = row.get("text", "")
+        cui, score = map_cui(text)
 
-    if cui:
-        mapped.append({
+        base_data = {
+            "report_id": row.get("report_id"),
+            "entity_id": row.get("entity_id"),
             "text": text,
-            "cui": cui,
-            "confidence_score": score
-        })
-    else:
-        unmapped.append({
-            "text": text
-        })
+            "type": row.get("type")
+        }
+
+        # Optional fields
+        if "subject_id" in df.columns:
+            base_data["subject_id"] = row.get("subject_id")
+
+        if "study_id" in df.columns:
+            base_data["study_id"] = row.get("study_id")
+
+        if cui:
+            base_data["cui"] = cui
+            base_data["confidence_score"] = score
+            mapped.append(base_data)
+        else:
+            unmapped.append(base_data)
+
+        # Progress print (every 8000 rows)
+        if i % 8000 == 0:
+            print(f"Processed {i} rows...")
+
+    return mapped, unmapped
+
+
+mapped, unmapped = process_data(df)
 
 
 # =========================
